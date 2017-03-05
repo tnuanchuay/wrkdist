@@ -9,6 +9,7 @@ import (
 	"net"
 	"fmt"
 	"errors"
+	"github.com/parnurzeal/gorequest"
 )
 
 const(
@@ -23,17 +24,31 @@ const (
 	MODE_LIST		=		"list"
 )
 
+const (
+	OK			=		"OK"
+	DEAD			=		"DEAD"
+	RUNNING			=		"RUNNING"
+	COOLDOWN		=		"COOLDOWN"
+)
+
 type Server struct {
 	Ip		net.IP
+	status		string
+	message		string
 }
 
 type Setting struct{
 	Node	[]Server
 }
 
+type StatusResponse struct {
+	Status		string
+}
+
 const (
 	ECONFIGNOTFOUND 			=		"Please initial setting file by use init"
 	EPARSEIP				=		"Cannot parse IP Address"
+	EPARSEJSON				=		"Cannot parse setting json file."
 )
 
 func main(){
@@ -47,32 +62,43 @@ func main(){
 
 	switch {
 	case *isInitMode != false:
-		fileExist := isConfigFileExist()
-		if !fileExist {
-			createNewSettingFile()
-		}else{
-			fmt.Println("Setting file already exist.")
-		}
+		initMode()
 	case *isAddMode != false:
-		fileExist := isConfigFileExist()
-		if !fileExist{
-			log.Fatal(ECONFIGNOTFOUND)
-		}
-
-		config := readSetting()
-		addNode(&config, getLastArg())
-		saveConfigFile(config)
+		addMode()
 	case *isDelMode != false:
-		fileExist := isConfigFileExist()
-		if !fileExist{
-			log.Fatal(ECONFIGNOTFOUND)
-		}
-
-		config := readSetting()
-		delNode(&config, getLastArg())
-		saveConfigFile(config)
+		delMode()
 	case *isRunMode != false:
 	case *isListMode != false:
+	}
+}
+func delMode() {
+	fileExist := isConfigFileExist()
+	if !fileExist{
+		log.Fatal(ECONFIGNOTFOUND)
+	}
+
+	config := readSetting()
+	delNode(&config, getLastArg())
+	saveConfigFile(config)
+}
+
+func addMode() {
+	fileExist := isConfigFileExist()
+	if !fileExist{
+		log.Fatal(ECONFIGNOTFOUND)
+	}
+
+	config := readSetting()
+	addNode(&config, getLastArg())
+	saveConfigFile(config)
+}
+
+func initMode() {
+	fileExist := isConfigFileExist()
+	if !fileExist {
+		createNewSettingFile()
+	}else{
+		fmt.Println("Setting file already exist.")
 	}
 }
 
@@ -114,8 +140,38 @@ func addNode(setting *Setting, ipString string) {
 	if isExistNode(setting, ip){
 		log.Fatal("Node exist in the node pool.")
 	}
+
+	status := ping(ip)
 	
-	(*setting).Node = append((*setting).Node, Server{Ip:ip})
+	(*setting).Node = append((*setting).Node, Server{Ip:ip, status:status})
+}
+
+func ping(ips net.IP) string{
+	status := DEAD
+
+	req := gorequest.New()
+	url := urlStat(ips)
+	res, body, err := req.Get(url).End()
+	if err != nil{
+		fmt.Printf("Cannot connect to %s but it will be in the pool.\n", ips.String())
+	}else{
+		if res.StatusCode == 200{
+			resStatus := StatusResponse{}
+			err := json.Unmarshal([]byte(body), &resStatus)
+			status = resStatus.Status
+			if err != nil{
+				log.Fatal(EPARSEJSON)
+			}
+		}else{
+			log.Println("Err response from", ips, "status code", res.StatusCode)
+		}
+	}
+
+	return status
+}
+
+func urlStat(ip net.IP) string{
+	return fmt.Sprintf("https://%s:12321/stat", ip.String())
 }
 
 func isExistNode(setting *Setting, ip net.IP) bool{
@@ -165,7 +221,7 @@ func createNewSettingFile() {
 	setting := Setting{}
 	settingJson, err := json.Marshal(setting)
 	if err != nil {
-		log.Fatal("Cannot parse setting json file.")
+		log.Fatal(EPARSEJSON)
 	}
 
 	ioutil.WriteFile(WRKDISTJSON, settingJson, 0644)
