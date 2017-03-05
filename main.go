@@ -69,6 +69,8 @@ func main(){
 		delMode()
 	case *isRunMode != false:
 	case *isListMode != false:
+	default:
+		fmt.Println(os.Args, "command not found.")
 	}
 }
 func delMode() {
