@@ -33,8 +33,8 @@ const (
 
 type Server struct {
 	Ip		net.IP
-	status		string
-	message		string
+	Status		string
+	Message		string
 }
 
 type Setting struct{
@@ -50,6 +50,12 @@ const (
 	EPARSEIP				=		"Cannot parse IP Address"
 	EPARSEJSON				=		"Cannot parse setting json file."
 )
+
+//wrkdist init
+//wrkdist add
+//wrkdist del
+//wrkdist run
+//wrkdist list
 
 func main(){
 	isInitMode := flag.Bool(MODE_INIT, false, "Initial state.")
@@ -69,10 +75,31 @@ func main(){
 		delMode()
 	case *isRunMode != false:
 	case *isListMode != false:
+		listMode()
 	default:
 		fmt.Println(os.Args, "command not found.")
 	}
 }
+
+func listMode() {
+	fileExist := isConfigFileExist()
+	if !fileExist {
+		log.Fatal(ECONFIGNOTFOUND)
+	}
+
+	config := readSetting()
+	for _, item := range config.Node {
+		item.Status = ping(item.Ip)
+	}
+
+	fmt.Println("#", "\t\t\t", "ip", "\t\t\t", "\tstatus")
+	for i, item := range config.Node {
+		fmt.Println(i, "\t\t\t", item.Ip.String(), "\t\t\t",item.Status)
+	}
+
+	saveConfigFile(config)
+}
+
 func delMode() {
 	fileExist := isConfigFileExist()
 	if !fileExist{
@@ -91,7 +118,8 @@ func addMode() {
 	}
 
 	config := readSetting()
-	addNode(&config, getLastArg())
+	ip := getLastArg()
+	addNode(&config, ip)
 	saveConfigFile(config)
 }
 
@@ -121,11 +149,13 @@ func delNode(setting *Setting, arg string) {
 func getLastArg() string{
 	return os.Args[len(os.Args)-1]
 }
+
 func saveConfigFile(setting Setting) {
 	jsonSetting, err := json.Marshal(setting)
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	err = ioutil.WriteFile(WRKDISTJSON, jsonSetting, 0644)
 	if err != nil {
 		log.Fatal(err)
@@ -144,8 +174,11 @@ func addNode(setting *Setting, ipString string) {
 	}
 
 	status := ping(ip)
-	
-	(*setting).Node = append((*setting).Node, Server{Ip:ip, status:status})
+	if status == DEAD{
+		fmt.Printf("Cannot connect to %s but it will be in the pool.\n", ipString)
+	}
+
+	(*setting).Node = append((*setting).Node, Server{Ip:ip, Status:status})
 }
 
 func ping(ips net.IP) string{
@@ -154,9 +187,7 @@ func ping(ips net.IP) string{
 	req := gorequest.New()
 	url := urlStat(ips)
 	res, body, err := req.Get(url).End()
-	if err != nil{
-		fmt.Printf("Cannot connect to %s but it will be in the pool.\n", ips.String())
-	}else{
+	if err == nil{
 		if res.StatusCode == 200{
 			resStatus := StatusResponse{}
 			err := json.Unmarshal([]byte(body), &resStatus)
