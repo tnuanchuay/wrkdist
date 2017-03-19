@@ -73,6 +73,7 @@ const (
 	EPARSEJSON				=		"Cannot parse setting json file."
 	ENOHOSTAVAILABLE			=		"No Node Available."
 	ENEEDWRKPARAM				=		"Need --c and --d params."
+	ETASKNOTFOUND				=		"Task not Found."
 )
 
 //wrkdist init
@@ -141,7 +142,84 @@ func main(){
 }
 
 func taskSumFunc() {
+	fileExist := isConfigFileExist()
+	if !fileExist {
+		log.Fatal(ECONFIGNOTFOUND)
+	}
 
+	config := readSetting()
+	var taskResponse []TaskResponse
+
+	for _, node := range config.Node{
+		task := getTaskFromNode(node.Ip, getLastArg())
+		if task.Status {
+			taskResponse = append(taskResponse, task)
+		}
+	}
+
+	sumResult := wrkdist.WrkResult{}
+
+	if len(taskResponse) > 0{
+		for _, task := range taskResponse{
+			sumResult.Latency_Avg += task.WrkResult.Latency_Avg
+			sumResult.Latency_Max += task.WrkResult.Latency_Max
+			sumResult.Latency_Stdev += task.WrkResult.Latency_Stdev
+			sumResult.RequestPerSec += task.WrkResult.RequestPerSec
+			sumResult.Requests += task.WrkResult.Requests
+			sumResult.Non2xx3xx += task.WrkResult.Non2xx3xx
+			sumResult.SocketErrors_Connection += task.WrkResult.SocketErrors_Connection
+			sumResult.SocketErrors_Read += task.WrkResult.SocketErrors_Read
+			sumResult.SocketErrors_Timeout += task.WrkResult.SocketErrors_Timeout
+			sumResult.SocketErrors_Write += task.WrkResult.SocketErrors_Write
+			sumResult.TotalTransfer += task.WrkResult.TotalTransfer
+			sumResult.TransferPerSec += task.WrkResult.TransferPerSec
+			sumResult.Connection += task.WrkResult.Connection
+			sumResult.Duration += task.WrkResult.Duration
+		}
+
+		sumResult.Latency_Avg /= float64(len(taskResponse))
+		sumResult.Latency_Max /= float64(len(taskResponse))
+		sumResult.Latency_Stdev /= float64(len(taskResponse))
+		sumResult.Duration /= float64(len(taskResponse))
+
+		fmt.Println("Connection\t\t\t\t\t=", sumResult.Connection)
+		fmt.Println("Duration\t\t\t\t\t=", sumResult.Duration)
+		fmt.Println("Requests/Sec\t\t\t\t\t=", sumResult.RequestPerSec)
+		fmt.Println("Tranfers/Sec\t\t\t\t\t=", sumResult.TransferPerSec)
+		fmt.Println("Requests\t\t\t\t\t=", sumResult.Requests)
+		fmt.Println("Total Transfer\t\t\t\t\t=", sumResult.TotalTransfer)
+		fmt.Println("Average Latency\t\t\t\t\t=", sumResult.Latency_Avg)
+		fmt.Println("Max Latency\t\t\t\t\t=", sumResult.Latency_Max)
+		fmt.Println("Standard Deviation Latency\t\t\t=", sumResult.Latency_Stdev)
+		fmt.Println("Non 2xx 3xx\t\t\t\t\t=", sumResult.Non2xx3xx)
+		fmt.Println("Connection Socket Error\t\t\t\t=", sumResult.SocketErrors_Connection)
+		fmt.Println("Write Socket Error\t\t\t\t=", sumResult.SocketErrors_Write)
+		fmt.Println("Read Socket Error\t\t\t\t=", sumResult.SocketErrors_Read)
+		fmt.Println("Timeout Socket Error\t\t\t\t=", sumResult.SocketErrors_Timeout)
+
+	}else{
+		log.Fatal(ETASKNOTFOUND)
+	}
+}
+
+func getTaskFromNode(ips net.IP, id string) TaskResponse{
+	taskResponse := TaskResponse{}
+
+	req := gorequest.New()
+	url := urlResult(ips, id)
+	res, body, err := req.Get(url).End()
+	//log.Fatal(url)
+	if err == nil{
+		if res.StatusCode == 200{
+			err := json.Unmarshal([]byte(body), &taskResponse)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}else{
+			log.Println("Err response from", ips, "status code", res.StatusCode)
+		}
+	}
+	return taskResponse
 }
 
 func taskListFunc() {
@@ -188,18 +266,6 @@ func runMode(c, d, url string) {
 
 	config.Task = append(config.Task, Task{ID:id, Start:time.Now()})
 	saveConfigFile(config)
-}
-
-func requestToNode(url string, reqToRun RequestToRun){
-	gorequest.New().Post(url).Send(reqToRun).End()
-}
-
-func generateTaskId() string {
-	sha := sha1.New()
-	sha.Write([]byte(time.Now().Format(time.RFC3339)))
-	idByte := sha.Sum(nil)
-
-	return fmt.Sprintf("%x", idByte[:5])
 }
 
 func workerMode() {
@@ -274,6 +340,18 @@ func workerMode() {
 	})
 
 	http.ListenAndServe(":12321", nil)
+}
+
+func requestToNode(url string, reqToRun RequestToRun){
+	gorequest.New().Post(url).Send(reqToRun).End()
+}
+
+func generateTaskId() string {
+	sha := sha1.New()
+	sha.Write([]byte(time.Now().Format(time.RFC3339)))
+	idByte := sha.Sum(nil)
+
+	return fmt.Sprintf("%x", idByte[:5])
 }
 
 func listMode() {
@@ -415,7 +493,7 @@ func urlRun(ip net.IP) string{
 }
 
 func urlResult(ip net.IP, id string) string{
-	return fmt.Sprintf("http://%s:12321/wrk?id=%d", ip.String(), id)
+	return fmt.Sprintf("http://%s:12321/wrk?id=%s", ip.String(), id)
 }
 
 func isExistNode(setting *Setting, ip net.IP) bool{
