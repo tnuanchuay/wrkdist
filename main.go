@@ -209,6 +209,9 @@ func workerMode() {
 	}
 
 	resultFile := readResult()
+	for _, item := range resultFile.Task{
+		task[item.TaskID] = item
+	}
 
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request){
 		if r.Method == "GET" {
