@@ -28,13 +28,12 @@ const (
 	MODE_RUN		=		"run"
 	MODE_LIST		=		"list"
 	MODE_WORKER		=		"worker"
-	MODE_TASK		=		"task"
 
 	FLAG_CONNECTION		=		"c"
 	FLAG_DURATION		=		"d"
 
-	FLAG_LIST		=		"list"
-	FLAG_SUM		=		"sum"
+	MODE_TASKLIST		=		"task-list"
+	MODE_TASKSUM		=		"task-sum"
 )
 
 type Node struct {
@@ -97,12 +96,11 @@ func main(){
 	isRunMode := flag.Bool(MODE_RUN, false, "Run wrk all of the node for result.")
 	isListMode := flag.Bool(MODE_LIST, false, "List all node format ipv4 in node pool.")
 	isWorkerMode := flag.Bool(MODE_WORKER, false, "Run as worker mode.")
-	isTaskMode := flag.Bool(MODE_TASK, false, "List All Task.")
+	isTaskModeList := flag.Bool(MODE_TASKLIST, false, "List all Task.")
+	isTaskModeSum := flag.Bool(MODE_TASKSUM, false, "Read Summary Task Result.")
 
 	runModeConnection := flag.String(FLAG_CONNECTION, "", "Number of Connection.")
 	runModeDuration := flag.String(FLAG_DURATION, "", "Test Duration.")
-	taskModeList := flag.Bool(FLAG_LIST, false, "List all Task.")
-	taskModeSum := flag.Bool(FLAG_SUM, false, "Read Summary Task Result.")
 
 	flag.Parse()
 
@@ -122,14 +120,10 @@ func main(){
 		workerMode()
 	case *isListMode != false:
 		listMode()
-	case *isTaskMode != false:
-		if(*taskModeList){
-			taskListFunc()
-		}else if (*taskModeSum){
-			taskSumFunc()
-		}else{
-			log.Fatal("--task must use with --list or --sum")
-		}
+	case *isTaskModeList != false:
+		taskListFunc()
+	case *isTaskModeSum != false:
+		taskSumFunc()
 
 	default:
 		fmt.Println(os.Args, "command not found.")
@@ -137,11 +131,15 @@ func main(){
 }
 
 func taskSumFunc() {
-
+	
 }
 
 func taskListFunc() {
-
+	config := readSetting()
+	fmt.Println("ID", "\t\t\t\t", "Start Time")
+	for _, item := range config.Task {
+		fmt.Println(item.ID, "\t\t\t",item.Start)
+	}
 }
 
 func runMode(c, d, url string) {
