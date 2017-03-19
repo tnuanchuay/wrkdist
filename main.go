@@ -101,8 +101,8 @@ func main(){
 
 	runModeConnection := flag.String(FLAG_CONNECTION, "", "Number of Connection.")
 	runModeDuration := flag.String(FLAG_DURATION, "", "Test Duration.")
-	taskModeList := flag.String(FLAG_LIST, "", "List all Task.")
-	taskModeSum := flag.String(FLAG_SUM, "", "Read Summary Task Result.")
+	taskModeList := flag.Bool(FLAG_LIST, "", "List all Task.")
+	taskModeSum := flag.Bool(FLAG_SUM, "", "Read Summary Task Result.")
 
 	flag.Parse()
 
