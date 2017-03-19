@@ -11,6 +11,10 @@ import (
 	"errors"
 	"github.com/parnurzeal/gorequest"
 	"net/http"
+	"time"
+	"github.com/tspn/wrkdist/wrkdist"
+	"strconv"
+	"crypto/sha1"
 )
 
 const(
@@ -24,16 +28,30 @@ const (
 	MODE_RUN		=		"run"
 	MODE_LIST		=		"list"
 	MODE_WORKER		=		"worker"
+	MODE_TASK		=		"task"
+
+	FLAG_CONNECTION		=		"c"
+	FLAG_DURATION		=		"d"
+
+	FLAG_LIST		=		"list"
+	FLAG_SUM		=		"sum"
 )
 
-type Server struct {
+type Node struct {
 	Ip		net.IP
 	Status		string
 	Message		string
 }
 
+type Task struct{
+	ID		string
+	Start		time.Time
+	Summary		wrkdist.WrkResult
+}
+
 type Setting struct{
-	Node	[]Server
+	Node	[]Node
+	Task	[]Task
 }
 
 type StatusResponse struct {
@@ -44,6 +62,8 @@ const (
 	ECONFIGNOTFOUND 			=		"Please initial setting file by use init"
 	EPARSEIP				=		"Cannot parse IP Address"
 	EPARSEJSON				=		"Cannot parse setting json file."
+	ENOHOSTAVAILABLE			=		"No Node Available."
+	ENEEDWRKPARAM				=		"Need --c and --d params."
 )
 
 //wrkdist init
@@ -60,6 +80,15 @@ const (
 )
 
 var workerState = WORKERIDLE
+var task map[string]wrkdist.WrkResult = make(map[string]wrkdist.WrkResult)
+
+type RequestToRun struct {
+	TaskID		string
+	Url		string
+	Thread		string
+	Connection	string
+	Duration	string
+}
 
 func main(){
 	isInitMode := flag.Bool(MODE_INIT, false, "Initial state.")
@@ -68,6 +97,13 @@ func main(){
 	isRunMode := flag.Bool(MODE_RUN, false, "Run wrk all of the node for result.")
 	isListMode := flag.Bool(MODE_LIST, false, "List all node format ipv4 in node pool.")
 	isWorkerMode := flag.Bool(MODE_WORKER, false, "Run as worker mode.")
+	isTaskMode := flag.Bool(MODE_TASK, false, "List All Task.")
+
+	runModeConnection := flag.String(FLAG_CONNECTION, "", "Number of Connection.")
+	runModeDuration := flag.String(FLAG_DURATION, "", "Test Duration.")
+	taskModeList := flag.String(FLAG_LIST, "", "List all Task.")
+	taskModeSum := flag.String(FLAG_SUM, "", "Read Summary Task Result.")
+
 	flag.Parse()
 
 	switch {
@@ -78,24 +114,125 @@ func main(){
 	case *isDelMode != false:
 		delMode()
 	case *isRunMode != false:
+		if runModeDuration == nil || runModeConnection == nil{
+			log.Fatal(ENEEDWRKPARAM)
+		}
+		runMode(*runModeConnection, *runModeDuration, getLastArg())
 	case *isWorkerMode != false:
 		workerMode()
 	case *isListMode != false:
 		listMode()
+	case *isTaskMode != false:
+		if(*taskModeList){
+			taskListFunc()
+		}else if (*taskModeSum){
+			taskSumFunc()
+		}else{
+			log.Fatal("--task must use with --list or --sum")
+		}
+
 	default:
 		fmt.Println(os.Args, "command not found.")
 	}
 }
 
+func taskSumFunc() {
+
+}
+
+func taskListFunc() {
+
+}
+
+func runMode(c, d, url string) {
+	fileExist := isConfigFileExist()
+	if !fileExist {
+		log.Fatal(ECONFIGNOTFOUND)
+	}
+
+	config := readSetting()
+	id := generateTaskId()
+
+	pingAllInList(&config)
+
+	var idleNodes []Node
+	for _, node := range config.Node{
+		if node.Status == WORKERIDLE{
+			idleNodes = append(idleNodes, node)
+		}
+	}
+
+	if !(len(idleNodes) > 0){
+		log.Fatal(ENOHOSTAVAILABLE)
+	}
+
+	cFloat, err := wrkdist.SIToFloat(c)
+	if err != nil{
+		log.Fatal(err)
+	}
+
+	eachNodeConnection := int(cFloat) / len(idleNodes)
+	reqToRun := RequestToRun{TaskID:id, Connection:strconv.Itoa(eachNodeConnection), Duration:d, Url:url}
+
+	for _, node := range idleNodes{
+		requestToNode(urlRun(node.Ip), reqToRun)
+	}
+
+	config.Task = append(config.Task, Task{ID:id, Start:time.Now()})
+	saveConfigFile(config)
+}
+
+func requestToNode(url string, reqToRun RequestToRun){
+	gorequest.New().Post(url).Send(reqToRun).End()
+}
+
+func generateTaskId() string {
+	sha := sha1.New()
+	sha.Write([]byte(time.Now().Format(time.RFC3339)))
+	idByte := sha.Sum(nil)
+
+	return fmt.Sprintf("%x", idByte[:5])
+}
+
 func workerMode() {
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request){
 		if r.Method == "GET" {
-			resposeData, err := json.Marshal(StatusResponse{Status:workerState})
+			responseData, err := json.Marshal(StatusResponse{Status:workerState})
 			if err != nil {
 				log.Fatal(err)
 			}
 
-			fmt.Fprint(w, string(resposeData))
+			fmt.Fprint(w, string(responseData))
+		}
+	})
+
+	http.HandleFunc("/wrk", func(w http.ResponseWriter, r *http.Request){
+		if r.Method == "POST"{
+			if workerState == WORKERIDLE {
+				decoder := json.NewDecoder(r.Body)
+				requestForRun := RequestToRun{}
+				err := decoder.Decode(&requestForRun)
+				if err != nil {
+					log.Fatal(err)
+				}
+
+				fmt.Println(requestForRun)
+				workerState = WORKERRUNNING
+
+				go func() {
+					task[requestForRun.TaskID] = wrkdist.Run(requestForRun.Url, requestForRun.Connection, requestForRun.Duration)
+					workerState = WORKERCOOLDOWN
+					time.Sleep(60 * time.Second)
+					workerState = WORKERIDLE
+				}()
+			}
+
+			responseData, err := json.Marshal(StatusResponse{Status:workerState})
+			if err != nil {
+				log.Fatal(err)
+			}
+			fmt.Println(string(responseData))
+			fmt.Fprint(w, string(responseData))
 		}
 	})
 
@@ -124,7 +261,7 @@ func pingAllInList(config *Setting){
 }
 
 func listAllNodeStatus(config Setting) {
-	fmt.Println("#", "\t\t\t", "ip", "\t\t\t", "\tstatus")
+	fmt.Println("#", "\t\t\t", "IP ADDRESS", "\t\t\t", "STATUS")
 	for i, item := range config.Node {
 		fmt.Println(i, "\t\t\t", item.Ip.String(), "\t\t\t",item.Status)
 	}
@@ -208,7 +345,7 @@ func addNode(setting *Setting, ipString string) {
 		fmt.Printf("Cannot connect to %s but it will be in the pool.\n", ipString)
 	}
 
-	(*setting).Node = append((*setting).Node, Server{Ip:ip, Status:status})
+	(*setting).Node = append((*setting).Node, Node{Ip:ip, Status:status})
 }
 
 func ping(ips net.IP) string{
@@ -234,6 +371,10 @@ func ping(ips net.IP) string{
 
 func urlStat(ip net.IP) string{
 	return fmt.Sprintf("http://%s:12321/status", ip.String())
+}
+
+func urlRun(ip net.IP) string{
+	return fmt.Sprintf("http://%s:12321/wrk", ip.String())
 }
 
 func isExistNode(setting *Setting, ip net.IP) bool{

@@ -1,20 +1,16 @@
-package main
+package wrkdist
 
 import (
 	"regexp"
 	"fmt"
 	"strings"
-	"github.com/tspn/wrk-load-testing-module/unit/si"
-	"github.com/jinzhu/gorm"
 	"strconv"
-	"github.com/tspn/wrk-load-testing-module/unit/mtime"
-	"github.com/tspn/wrk-load-testing-module/model"
 	"os/exec"
 	"bufio"
+	"runtime"
 )
 
 type WrkResult struct {
-	gorm.Model
 	JobID		uint
 	IsError		bool
 	Url		string
@@ -39,12 +35,12 @@ type WrkResult struct {
 	TestcaseID		uint
 }
 
-func Run(url, t, c, d string) WrkResult{
+func Run(url, c, d string) WrkResult{
 	var command *exec.Cmd
 
-	command = exec.Command("wrk", "-t"+t, "-c"+c, "-d"+d ,url)
+	command = exec.Command("wrk", fmt.Sprintf("-t%d", runtime.NumCPU()) , fmt.Sprintf("-c%s", c), fmt.Sprintf("-d%s", d) ,url)
 
-	//fmt.Println(command.Args)
+	fmt.Println(command.Args)
 	cmdReader, _ := command.StdoutPipe()
 	scanner := bufio.NewScanner(cmdReader)
 	defer cmdReader.Close()
@@ -62,7 +58,7 @@ func Run(url, t, c, d string) WrkResult{
 
 	fmt.Println(out)
 
-	wrk := model.WrkResult{}
+	wrk := WrkResult{}
 	wrk.SetData(url, out)
 	return wrk
 }
@@ -112,7 +108,7 @@ func (t *WrkResult) SetTotalTransfer(s string){
 	}else{
 		textTotalTransfer := result[0][0]
 		splitedTextTotalTransfer := strings.Fields(textTotalTransfer)
-		t.TotalTransfer,_ = si.SIToFloat(splitedTextTotalTransfer[1])
+		t.TotalTransfer,_ = SIToFloat(splitedTextTotalTransfer[1])
 		//fmt.Println("t.TotalTransfer", t.TotalTransfer)
 	}
 }
@@ -126,9 +122,9 @@ func (t *WrkResult) SetReqPerSec(s string){
 	}else{
 		textReqPerSec := result[0][0]
 		sqlitedTextReqPerSec := strings.Fields(textReqPerSec)
-		t.ReqPerSec_Avg, _ = si.SIToFloat(sqlitedTextReqPerSec[1])
-		t.ReqPerSec_Stdev, _ = si.SIToFloat(sqlitedTextReqPerSec[2])
-		t.ReqPerSec_Max, _ = si.SIToFloat(sqlitedTextReqPerSec[3])
+		t.ReqPerSec_Avg, _ = SIToFloat(sqlitedTextReqPerSec[1])
+		t.ReqPerSec_Stdev, _ = SIToFloat(sqlitedTextReqPerSec[2])
+		t.ReqPerSec_Max, _ = SIToFloat(sqlitedTextReqPerSec[3])
 	}
 }
 
@@ -141,9 +137,9 @@ func (t *WrkResult) SetLatency(s string){
 	}else{
 		textLatency := result[0][0]
 		splitedTextLatency := strings.Fields(textLatency)
-		t.Latency_Avg, _ = mtime.StringToFloat(splitedTextLatency[1])
-		t.Latency_Stdev, _ = mtime.StringToFloat(splitedTextLatency[2])
-		t.Latency_Max, _ = mtime.StringToFloat(splitedTextLatency[3])
+		t.Latency_Avg, _ = TimeToFloat(splitedTextLatency[1])
+		t.Latency_Stdev, _ = TimeToFloat(splitedTextLatency[2])
+		t.Latency_Max, _ = TimeToFloat(splitedTextLatency[3])
 	}
 }
 
@@ -156,7 +152,7 @@ func (t *WrkResult) SetTransferPerSec(s string){
 	}else{
 		textTps := result[0][0]
 		splitedTextTps := strings.Fields(textTps)
-		t.TransferPerSec, _ = si.SIToFloat(splitedTextTps[len(splitedTextTps) - 1])
+		t.TransferPerSec, _ = SIToFloat(splitedTextTps[len(splitedTextTps) - 1])
 		//fmt.Println("t.TransferPerSec", t.TransferPerSec)
 	}
 }
@@ -201,7 +197,7 @@ func (t *WrkResult) SetDuration(s string){
 		textTime := result[0][0]
 		textTime = strings.Replace(textTime, ",", "", -1)
 		splitedTextTime := strings.Fields(textTime)[2]
-		t.Duration, _ = mtime.StringToFloat(splitedTextTime)
+		t.Duration, _ = TimeToFloat(splitedTextTime)
 		//fmt.Println("t.duration", t.Duration)
 	}
 }
@@ -216,7 +212,7 @@ func (t *WrkResult) SetThread(s string){
 	}else{
 		textThread := result[0][0]
 		splitedTextThread := strings.Fields(textThread)[0]
-		threadNum, _ := si.SIToFloat(splitedTextThread)
+		threadNum, _ := SIToFloat(splitedTextThread)
 		t.Thread = int(threadNum)
 		//fmt.Println("t.Thread", t.Thread)
 	}
@@ -232,7 +228,7 @@ func (t *WrkResult) SetConnection(s string){
 	}else{
 		textConnection := result[0][0]
 		splitedTextConnection := strings.Fields(textConnection)[0]
-		threadNum, _ := si.SIToFloat(splitedTextConnection)
+		threadNum, _ := SIToFloat(splitedTextConnection)
 		t.Connection = int(threadNum)
 		//fmt.Println("t.Connection", t.Connection)
 	}
