@@ -57,6 +57,11 @@ type StatusResponse struct {
 	Status		string
 }
 
+type TaskResponse struct {
+	Status		bool
+	WrkResult	wrkdist.WrkResult
+}
+
 const (
 	ECONFIGNOTFOUND 			=		"Please initial setting file by use init"
 	EPARSEIP				=		"Cannot parse IP Address"
@@ -131,7 +136,7 @@ func main(){
 }
 
 func taskSumFunc() {
-	
+
 }
 
 func taskListFunc() {
@@ -205,7 +210,24 @@ func workerMode() {
 	})
 
 	http.HandleFunc("/wrk", func(w http.ResponseWriter, r *http.Request){
-		if r.Method == "POST"{
+		if r.Method == "GET"{
+			id := r.FormValue("id")
+			if id != ""{
+				wrkResult := task[id]
+				if wrkResult.TaskID == "" {
+					res, _ := json.Marshal(TaskResponse{Status:false})
+					fmt.Fprint(w, string(res))
+				}
+
+				byteJsonWrkResult, err := json.Marshal(TaskResponse{Status:true, WrkResult:wrkResult})
+				if err != nil {
+					log.Println(err)
+				}
+
+				fmt.Fprint(w, string(byteJsonWrkResult))
+			}
+
+		}else if r.Method == "POST"{
 			if workerState == WORKERIDLE {
 				decoder := json.NewDecoder(r.Body)
 				requestForRun := RequestToRun{}
@@ -218,7 +240,7 @@ func workerMode() {
 				workerState = WORKERRUNNING
 
 				go func() {
-					task[requestForRun.TaskID] = wrkdist.Run(requestForRun.Url, requestForRun.Connection, requestForRun.Duration)
+					task[requestForRun.TaskID] = wrkdist.Run(requestForRun.TaskID, requestForRun.Url, requestForRun.Connection, requestForRun.Duration)
 					workerState = WORKERCOOLDOWN
 					time.Sleep(60 * time.Second)
 					workerState = WORKERIDLE

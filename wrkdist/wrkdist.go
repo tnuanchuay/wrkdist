@@ -11,7 +11,7 @@ import (
 )
 
 type WrkResult struct {
-	JobID		uint
+	TaskID		string
 	IsError		bool
 	Url		string
 	Duration	float64
@@ -32,10 +32,9 @@ type WrkResult struct {
 	SocketErrors_Write	int
 	SocketErrors_Timeout	int
 	Non2xx3xx	int
-	TestcaseID		uint
 }
 
-func Run(url, c, d string) WrkResult{
+func Run(id, url, c, d string) WrkResult{
 	var command *exec.Cmd
 
 	command = exec.Command("wrk", fmt.Sprintf("-t%d", runtime.NumCPU()) , fmt.Sprintf("-c%s", c), fmt.Sprintf("-d%s", d) ,url)
@@ -58,7 +57,7 @@ func Run(url, c, d string) WrkResult{
 
 	fmt.Println(out)
 
-	wrk := WrkResult{}
+	wrk := WrkResult{TaskID:id}
 	wrk.SetData(url, out)
 	return wrk
 }
