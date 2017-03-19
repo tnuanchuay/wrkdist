@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"errors"
 	"github.com/parnurzeal/gorequest"
+	"net/http"
 )
 
 const(
@@ -23,13 +24,6 @@ const (
 	MODE_RUN		=		"run"
 	MODE_LIST		=		"list"
 	MODE_WORKER		=		"worker"
-)
-
-const (
-	OK			=		"OK"
-	DEAD			=		"DEAD"
-	RUNNING			=		"RUNNING"
-	COOLDOWN		=		"COOLDOWN"
 )
 
 type Server struct {
@@ -58,6 +52,15 @@ const (
 //wrkdist run
 //wrkdist list
 
+const (
+	WORKERIDLE				=		"IDLE"
+	WORKERRUNNING				=		"RUNNING"
+	WORKERCOOLDOWN				=		"COOLDOWN"
+	WORKERDEAD				=		"DEAD"
+)
+
+var workerState = WORKERIDLE
+
 func main(){
 	isInitMode := flag.Bool(MODE_INIT, false, "Initial state.")
 	isAddMode := flag.Bool(MODE_ADD, false, "Add node by ipv4 into the node pool.")
@@ -76,11 +79,27 @@ func main(){
 		delMode()
 	case *isRunMode != false:
 	case *isWorkerMode != false:
+		workerMode()
 	case *isListMode != false:
 		listMode()
 	default:
 		fmt.Println(os.Args, "command not found.")
 	}
+}
+
+func workerMode() {
+	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request){
+		if r.Method == "GET" {
+			resposeData, err := json.Marshal(StatusResponse{Status:workerState})
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			fmt.Fprint(w, string(resposeData))
+		}
+	})
+
+	http.ListenAndServe(":12321", nil)
 }
 
 func listMode() {
@@ -91,14 +110,16 @@ func listMode() {
 
 	config := readSetting()
 
-	pingAll(config)
+	pingAllInList(&config)
 	listAllNodeStatus(config)
 
 	saveConfigFile(config)
 }
-func pingAll(config Setting) {
-	for _, item := range config.Node {
-		item.Status = ping(item.Ip)
+
+func pingAllInList(config *Setting){
+	nodes := (*config).Node
+	for i := 0 ; i < len(nodes) ; i++{
+		nodes[i].Status = ping(nodes[i].Ip)
 	}
 }
 
@@ -183,7 +204,7 @@ func addNode(setting *Setting, ipString string) {
 	}
 
 	status := ping(ip)
-	if status == DEAD{
+	if status == WORKERDEAD{
 		fmt.Printf("Cannot connect to %s but it will be in the pool.\n", ipString)
 	}
 
@@ -191,7 +212,7 @@ func addNode(setting *Setting, ipString string) {
 }
 
 func ping(ips net.IP) string{
-	status := DEAD
+	status := WORKERDEAD
 
 	req := gorequest.New()
 	url := urlStat(ips)
@@ -208,12 +229,11 @@ func ping(ips net.IP) string{
 			log.Println("Err response from", ips, "status code", res.StatusCode)
 		}
 	}
-
 	return status
 }
 
 func urlStat(ip net.IP) string{
-	return fmt.Sprintf("https://%s:12321/stat", ip.String())
+	return fmt.Sprintf("http://%s:12321/status", ip.String())
 }
 
 func isExistNode(setting *Setting, ip net.IP) bool{
