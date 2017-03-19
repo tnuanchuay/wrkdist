@@ -19,6 +19,7 @@ import (
 
 const(
 	WRKDISTJSON		=		"./wrkdist.json"
+	WRKRESULTJSON		=		"./wrkresult.json"
 )
 
 const (
@@ -46,6 +47,10 @@ type Task struct{
 	ID		string
 	Start		time.Time
 	Summary		wrkdist.WrkResult
+}
+
+type TaskResultFile struct {
+	Task	[]wrkdist.WrkResult
 }
 
 type Setting struct{
@@ -198,6 +203,13 @@ func generateTaskId() string {
 }
 
 func workerMode() {
+	fileExist := isResultFileExist()
+	if !fileExist {
+		createNewResultFile()
+	}
+
+	resultFile := readResult()
+
 	http.HandleFunc("/status", func(w http.ResponseWriter, r *http.Request){
 		if r.Method == "GET" {
 			responseData, err := json.Marshal(StatusResponse{Status:workerState})
@@ -241,6 +253,8 @@ func workerMode() {
 
 				go func() {
 					task[requestForRun.TaskID] = wrkdist.Run(requestForRun.TaskID, requestForRun.Url, requestForRun.Connection, requestForRun.Duration)
+					resultFile.Task = append(resultFile.Task, task[requestForRun.TaskID])
+					saveResultFile(resultFile)
 					workerState = WORKERCOOLDOWN
 					time.Sleep(60 * time.Second)
 					workerState = WORKERIDLE
@@ -397,6 +411,10 @@ func urlRun(ip net.IP) string{
 	return fmt.Sprintf("http://%s:12321/wrk", ip.String())
 }
 
+func urlResult(ip net.IP, id string) string{
+	return fmt.Sprintf("http://%s:12321/wrk?id=%d", ip.String(), id)
+}
+
 func isExistNode(setting *Setting, ip net.IP) bool{
 	for _, item := range setting.Node{
 		if item.Ip.Equal(ip) {
@@ -457,3 +475,50 @@ func isConfigFileExist() bool {
 	}
 	return fileExist
 }
+
+func isResultFileExist() bool {
+	fileExist := true
+	if _, err := os.Stat(WRKRESULTJSON); os.IsNotExist(err){
+		fileExist = false
+	}
+	return fileExist
+}
+
+func createNewResultFile() {
+	resultFile := TaskResultFile{}
+	resultFileJson, err := json.Marshal(resultFile)
+	if err != nil {
+		log.Fatal(EPARSEJSON)
+	}
+
+	ioutil.WriteFile(WRKRESULTJSON, resultFileJson, 0644)
+}
+
+func readResult() TaskResultFile {
+	tasks := TaskResultFile{}
+
+	file, err := ioutil.ReadFile(WRKRESULTJSON)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = json.Unmarshal(file, &tasks)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return tasks
+}
+
+func saveResultFile(resultFile TaskResultFile) {
+	jsonresultFile, err := json.Marshal(resultFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = ioutil.WriteFile(WRKRESULTJSON, jsonresultFile, 0644)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
