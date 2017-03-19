@@ -22,6 +22,7 @@ const (
 	MODE_DEL		=		"del"
 	MODE_RUN		=		"run"
 	MODE_LIST		=		"list"
+	MODE_WORKER		=		"worker"
 )
 
 const (
@@ -61,9 +62,9 @@ func main(){
 	isInitMode := flag.Bool(MODE_INIT, false, "Initial state.")
 	isAddMode := flag.Bool(MODE_ADD, false, "Add node by ipv4 into the node pool.")
 	isDelMode := flag.Bool(MODE_DEL, false, "Del node from node pool.")
-	isRunMode := flag.Bool(MODE_RUN, false, "Run wrk all of the node for result")
-	isListMode := flag.Bool(MODE_LIST, false, "List all node format ipv4 in node pool")
-
+	isRunMode := flag.Bool(MODE_RUN, false, "Run wrk all of the node for result.")
+	isListMode := flag.Bool(MODE_LIST, false, "List all node format ipv4 in node pool.")
+	isWorkerMode := flag.Bool(MODE_WORKER, false, "Run as worker mode.")
 	flag.Parse()
 
 	switch {
@@ -74,6 +75,7 @@ func main(){
 	case *isDelMode != false:
 		delMode()
 	case *isRunMode != false:
+	case *isWorkerMode != false:
 	case *isListMode != false:
 		listMode()
 	default:
@@ -88,16 +90,23 @@ func listMode() {
 	}
 
 	config := readSetting()
+
+	pingAll(config)
+	listAllNodeStatus(config)
+
+	saveConfigFile(config)
+}
+func pingAll(config Setting) {
 	for _, item := range config.Node {
 		item.Status = ping(item.Ip)
 	}
+}
 
+func listAllNodeStatus(config Setting) {
 	fmt.Println("#", "\t\t\t", "ip", "\t\t\t", "\tstatus")
 	for i, item := range config.Node {
 		fmt.Println(i, "\t\t\t", item.Ip.String(), "\t\t\t",item.Status)
 	}
-
-	saveConfigFile(config)
 }
 
 func delMode() {
